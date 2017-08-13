@@ -1,6 +1,8 @@
 package midimuxer
 
-import "github.com/rakyll/portmidi"
+import (
+	"github.com/rakyll/portmidi"
+)
 
 type DeviceID portmidi.DeviceID
 
@@ -12,20 +14,26 @@ type Device struct {
 
 type Event struct {
 	portmidi.Event
-	DeviceID DeviceID
+	Device *Device
+}
+
+type Route struct {
+	device       *Device
+	filters      []Filter
+	transformers []Transformer
 }
 
 type Router struct {
 	inputs, outputs map[DeviceID]*Device
 
 	events chan Event
-	routes map[DeviceID][]*Device
+	routes map[DeviceID][]*Route
 }
 
 func NewRouter() *Router {
 	return &Router{
 		events: make(chan Event),
-		routes: make(map[DeviceID][]*Device),
+		routes: make(map[DeviceID][]*Route),
 	}
 }
 
@@ -51,8 +59,19 @@ func (m *Router) loadDevices() {
 
 func (m *Router) routeEvents() {
 	for event := range m.events {
-		for _, device := range m.routes[event.DeviceID] {
-			device.Stream.WriteShort(event.Status, event.Data1, event.Data2)
+		for _, route := range m.routes[event.Device.DeviceID] {
+			sendEvent := true
+			for _, filter := range route.filters {
+				if !filter.Filter(event) {
+					sendEvent = false
+				}
+			}
+			if sendEvent {
+				for _, transformer := range route.transformers {
+					event = transformer.Transform(event)
+				}
+				route.device.Stream.WriteShort(event.Status, event.Data1, event.Data2)
+			}
 		}
 	}
 }
@@ -86,8 +105,8 @@ func (m *Router) Outputs() map[DeviceID]*Device {
 	return m.outputs
 }
 
-func (m *Router) AddRoute(input *Device, output *Device) error {
-	m.routes[input.DeviceID] = append(m.routes[input.DeviceID], output)
+func (m *Router) AddRoute(input *Device, output *Device, filters []Filter, transformers []Transformer) error {
+	m.routes[input.DeviceID] = append(m.routes[input.DeviceID], &Route{output, filters, transformers})
 
 	if input.Stream == nil {
 		stream, err := portmidi.NewInputStream(portmidi.DeviceID(input.DeviceID), 1024)
@@ -104,11 +123,11 @@ func (m *Router) AddRoute(input *Device, output *Device) error {
 		output.Stream = stream
 	}
 
-	go func(deviceID DeviceID, events <-chan portmidi.Event) {
+	go func(device *Device, events <-chan portmidi.Event) {
 		for event := range events {
-			m.events <- Event{event, deviceID}
+			m.events <- Event{event, input}
 		}
-	}(input.DeviceID, input.Stream.Listen())
+	}(input, input.Stream.Listen())
 
 	return nil
 }

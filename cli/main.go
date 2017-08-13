@@ -55,7 +55,12 @@ func inputLoop(router *midimuxer.Router, done chan bool) {
 		panic(err)
 	}
 
-	router.AddRoute(input, output)
+	router.AddRoute(
+		input,
+		output,
+		[]midimuxer.Filter{midimuxer.NoteFilter{64, midimuxer.LessThan}},
+		[]midimuxer.Transformer{midimuxer.AfterTouchToPitchBendTransformer{}},
+	)
 
 	done <- true
 }
