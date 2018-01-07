@@ -1,68 +1,55 @@
 package main
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
+	"sort"
+
 	"github.com/acmanderson/midimuxer"
-	"os"
-	"os/signal"
-	"strconv"
-	"strings"
+	"github.com/manifoldco/promptui"
 )
 
-func parseInput(input string, devices map[midimuxer.DeviceID]*midimuxer.Device) (*midimuxer.Device, error) {
-	index, err := strconv.ParseInt(input, 10, 0)
+func getDeviceSelection(choices map[midimuxer.DeviceID]*midimuxer.Device, label string, selectedGlyph string) (*midimuxer.Device, error) {
+	devices := make([]*midimuxer.Device, 0)
+	for _, device := range choices {
+		devices = append(devices, device)
+	}
+	sort.Slice(devices, func(i, j int) bool {
+		return devices[i].DeviceInfo.Name < devices[j].DeviceInfo.Name
+	})
+
+	deviceTemplates := &promptui.SelectTemplates{
+		Active:   fmt.Sprintf("%s {{ .DeviceInfo.Name | cyan | bold}}", selectedGlyph),
+		Inactive: "{{ .DeviceInfo.Name | cyan }}",
+		Selected: fmt.Sprintf("%s {{ .DeviceInfo.Name }}", selectedGlyph),
+	}
+
+	prompt := promptui.Select{
+		Label:     label,
+		Items:     devices,
+		Templates: deviceTemplates,
+	}
+	i, _, err := prompt.Run()
 	if err != nil {
 		return nil, err
 	}
-
-	if device, ok := devices[midimuxer.DeviceID(index)]; ok {
-		return device, nil
-	}
-
-	fmt.Printf("%+v %d\n", devices, index)
-	return nil, errors.New("Selection is invalid.")
+	return devices[i], nil
 }
 
-func getDeviceSelection(reader *bufio.Reader, choices map[midimuxer.DeviceID]*midimuxer.Device, deviceType string) (*midimuxer.Device, error) {
-	fmt.Printf("Select an %s =>\n", deviceType)
-	for i, device := range choices {
-		fmt.Printf("\t%d) %v\n", i, device.DeviceInfo.Name)
-	}
-	fmt.Printf("> ")
-	selection, err := reader.ReadString('\n')
+func prompt(router *midimuxer.Router) error {
+	selectedInput, err := getDeviceSelection(router.Inputs(), "Inputs", "\U0001F3B9") // musical keyboard emoji
 	if err != nil {
-		return nil, err
+		return err
 	}
-	device, err := parseInput(strings.Trim(selection, "\n"), choices)
+	selectedOutput, err := getDeviceSelection(router.Outputs(), "Outputs", "\U0001F50A") // speaker emoji
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	return device, nil
-}
-
-func inputLoop(router *midimuxer.Router, done chan bool) {
-	inputs, outputs := router.Inputs(), router.Outputs()
-	reader := bufio.NewReader(os.Stdin)
-	input, err := getDeviceSelection(reader, inputs, "input")
-	if err != nil {
-		panic(err)
-	}
-	output, err := getDeviceSelection(reader, outputs, "output")
-	if err != nil {
-		panic(err)
-	}
-
-	router.AddRoute(
-		input,
-		output,
-		[]midimuxer.Filter{midimuxer.NoteFilter{64, midimuxer.LessThan}},
-		[]midimuxer.Transformer{midimuxer.AfterTouchToPitchBendTransformer{}},
+	return router.AddRoute(
+		selectedInput,
+		selectedOutput,
+		nil,
+		nil,
 	)
-
-	done <- true
 }
 
 func main() {
@@ -70,19 +57,14 @@ func main() {
 	router.Start()
 	defer router.Stop()
 
-	sigint := make(chan os.Signal, 1)
-	signal.Notify(sigint, os.Interrupt)
-
-	done := make(chan bool)
-	go inputLoop(router, done)
-
-LOOP:
 	for {
-		select {
-		case <-sigint:
-			break LOOP
-		case <-done:
-			go inputLoop(router, done)
+		if err := prompt(router); err != nil {
+			switch err {
+			case promptui.ErrInterrupt:
+				return
+			default:
+				panic(err)
+			}
 		}
 	}
 }
