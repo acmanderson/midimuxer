@@ -1,133 +1,116 @@
 package midimuxer
 
-import (
-	"github.com/rakyll/portmidi"
+type (
+	Event struct {
+		Status int64
+		Data1  int64
+		Data2  int64
+	}
+
+	Device interface {
+		IsInput() bool
+		IsOutput() bool
+		Incoming() (<-chan *Event, error)
+		Outgoing() (chan<- *Event, error)
+		Name() string
+	}
+
+	Source interface {
+		Start() error
+		Stop() error
+		Devices() []Device
+	}
+
+	route struct {
+		device       Device
+		filters      []Filter
+		transformers []Transformer
+	}
+
+	Router struct {
+		routes  map[Device][]*route
+		sources []Source
+	}
 )
 
-type DeviceID portmidi.DeviceID
-
-type Device struct {
-	DeviceID   DeviceID
-	DeviceInfo *portmidi.DeviceInfo
-	Stream     *portmidi.Stream
-}
-
-type Event struct {
-	portmidi.Event
-	Device *Device
-}
-
-type Route struct {
-	device       *Device
-	filters      []Filter
-	transformers []Transformer
-}
-
-type Router struct {
-	inputs, outputs map[DeviceID]*Device
-
-	events chan Event
-	routes map[DeviceID][]*Route
-}
-
-func NewRouter() *Router {
+func NewRouter(sources ...Source) *Router {
 	return &Router{
-		events: make(chan Event),
-		routes: make(map[DeviceID][]*Route),
+		routes:  make(map[Device][]*route),
+		sources: sources,
 	}
 }
 
-func (m *Router) loadDevices() {
-	inputs, outputs := make(map[DeviceID]*Device), make(map[DeviceID]*Device)
-	for i := 0; i < portmidi.CountDevices(); i++ {
-		deviceID := DeviceID(i)
-		deviceInfo := portmidi.Info(portmidi.DeviceID(deviceID))
-		if deviceInfo.IsInputAvailable {
-			if _, ok := inputs[deviceID]; !ok {
-				inputs[deviceID] = &Device{deviceID, deviceInfo, nil}
-			}
-		}
-		if deviceInfo.IsOutputAvailable {
-			if _, ok := outputs[deviceID]; !ok {
-				outputs[deviceID] = &Device{deviceID, deviceInfo, nil}
-			}
+func (m *Router) Start() error {
+	for _, source := range m.sources {
+		if err := source.Start(); err != nil {
+			return err
 		}
 	}
-	m.inputs = inputs
-	m.outputs = outputs
+	return nil
 }
 
-func (m *Router) routeEvents() {
-	for event := range m.events {
-		for _, route := range m.routes[event.Device.DeviceID] {
-			sendEvent := true
-			for _, filter := range route.filters {
-				if !filter.Filter(event) {
-					sendEvent = false
-				}
-			}
-			if sendEvent {
-				for _, transformer := range route.transformers {
-					event = transformer.Transform(event)
-				}
-				route.device.Stream.WriteShort(event.Status, event.Data1, event.Data2)
+func (m *Router) Stop() error {
+	for _, source := range m.sources {
+		if err := source.Stop(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Router) Inputs() []Device {
+	var inputs []Device
+	for _, source := range m.sources {
+		for _, device := range source.Devices() {
+			if device.IsInput() {
+				inputs = append(inputs, device)
 			}
 		}
 	}
+	return inputs
 }
 
-func (m *Router) Start() {
-	portmidi.Initialize()
-	m.loadDevices()
-	go m.routeEvents()
-}
-
-func (m *Router) Stop() {
-	portmidi.Terminate()
-	close(m.events)
-	for _, input := range m.inputs {
-		if input.Stream != nil {
-			input.Stream.Close()
+func (m *Router) Outputs() []Device {
+	var outputs []Device
+	for _, source := range m.sources {
+		for _, device := range source.Devices() {
+			if device.IsOutput() {
+				outputs = append(outputs, device)
+			}
 		}
 	}
-	for _, output := range m.outputs {
-		if output.Stream != nil {
-			output.Stream.Close()
-		}
-	}
+	return outputs
 }
 
-func (m *Router) Inputs() map[DeviceID]*Device {
-	return m.inputs
-}
+func (m *Router) AddRoute(input Device, output Device, filters []Filter, transformers []Transformer) error {
+	_, ok := m.routes[input]
+	m.routes[input] = append(m.routes[input], &route{output, filters, transformers})
 
-func (m *Router) Outputs() map[DeviceID]*Device {
-	return m.outputs
-}
-
-func (m *Router) AddRoute(input *Device, output *Device, filters []Filter, transformers []Transformer) error {
-	m.routes[input.DeviceID] = append(m.routes[input.DeviceID], &Route{output, filters, transformers})
-
-	if input.Stream == nil {
-		stream, err := portmidi.NewInputStream(portmidi.DeviceID(input.DeviceID), 1024)
+	if !ok {
+		incoming, err := input.Incoming()
 		if err != nil {
 			return err
 		}
-		input.Stream = stream
+		go func(device Device, events <-chan *Event) {
+			for event := range events {
+				for _, route := range m.routes[device] {
+					sendEvent := true
+					for _, filter := range route.filters {
+						if !filter.Filter(*event) {
+							sendEvent = false
+						}
+					}
+					if sendEvent {
+						for _, transformer := range route.transformers {
+							*event = transformer.Transform(*event)
+						}
+						outgoing, _ := route.device.Outgoing()
+						outgoing <- &Event{event.Status, event.Data1, event.Data2}
+					}
+				}
+			}
+		}(input, incoming)
 	}
-	if output.Stream == nil {
-		stream, err := portmidi.NewOutputStream(portmidi.DeviceID(output.DeviceID), 1024, 0)
-		if err != nil {
-			return err
-		}
-		output.Stream = stream
-	}
-
-	go func(device *Device, events <-chan portmidi.Event) {
-		for event := range events {
-			m.events <- Event{event, input}
-		}
-	}(input, input.Stream.Listen())
 
 	return nil
 }
