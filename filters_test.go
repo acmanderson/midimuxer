@@ -15,41 +15,41 @@ var _ = Describe("Filters", func() {
 	)
 
 	Describe("ChannelFilter", func() {
-		filter = ChannelFilter{Channel: 1}
+		filter = ChannelFilter(1)
 
 		Context("With an event matching its channel", func() {
 			It("should send the event", func() {
-				Expect(filter.Filter(event1)).To(Equal(true))
+				Expect(filter(event1)).To(Equal(true))
 			})
 		})
 
 		Context("With an event not matching its channel", func() {
 			It("should not send the event", func() {
-				Expect(filter.Filter(event2)).To(Equal(false))
+				Expect(filter(event2)).To(Equal(false))
 			})
 		})
 	})
 
 	Describe("NoteFilter", func() {
 		Context("With a LessThan Condition", func() {
-			filter := NoteFilter{Note: 60, Condition: LessThan}
+			filter := NoteFilter(60, LessThan)
 
 			It("should not send events whose note is greater than its Note value", func() {
-				Expect(filter.Filter(event1)).To(Equal(false))
+				Expect(filter(event1)).To(Equal(false))
 			})
 			It("should send events whose note is less than its Note value", func() {
-				Expect(filter.Filter(event2)).To(Equal(true))
+				Expect(filter(event2)).To(Equal(true))
 			})
 		})
 
 		Context("With a GreaterThan Condition", func() {
-			filter := NoteFilter{Note: 35, Condition: GreaterThan}
+			filter := NoteFilter(35, GreaterThan)
 
 			It("should send events whose note is greater than its Note value", func() {
-				Expect(filter.Filter(event1)).To(Equal(true))
+				Expect(filter(event1)).To(Equal(true))
 			})
 			It("should not send events whose note is less than its Note value", func() {
-				Expect(filter.Filter(event2)).To(Equal(false))
+				Expect(filter(event2)).To(Equal(false))
 			})
 		})
 	})

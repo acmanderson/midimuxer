@@ -1,13 +1,8 @@
 package midimuxer
 
-type Transformer interface {
-	Transform(Event) Event
-}
+type Transformer func(Event) Event
 
-type AfterTouchToPitchBendTransformer struct {
-}
-
-func (t AfterTouchToPitchBendTransformer) Transform(event Event) Event {
+func AftertouchToPitchBend(event Event) Event {
 	if !((event.Status >= 0xA0 && event.Status <= 0xAF) || (event.Status >= 0xD0 && event.Status <= 0xDF)) {
 		return event
 	}

@@ -99,14 +99,14 @@ func (r *Router) routeEvents(input Device, events <-chan *Event) {
 		for _, route := range r.routes[input] {
 			sendEvent := true
 			for _, filter := range route.filters {
-				if !filter.Filter(*event) {
+				if !filter(*event) {
 					sendEvent = false
 					break
 				}
 			}
 			if sendEvent {
 				for _, transformer := range route.transformers {
-					*event = transformer.Transform(*event)
+					*event = transformer(*event)
 				}
 				outgoing, _ := route.device.Outgoing()
 				outgoing <- &Event{event.Status, event.Data1, event.Data2}
