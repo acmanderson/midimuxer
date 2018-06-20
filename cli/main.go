@@ -5,22 +5,23 @@ import (
 	"sort"
 
 	"github.com/acmanderson/midimuxer"
+	"github.com/acmanderson/midimuxer/portmidi"
 	"github.com/manifoldco/promptui"
 )
 
-func getDeviceSelection(choices map[midimuxer.DeviceID]*midimuxer.Device, label string, selectedGlyph string) (*midimuxer.Device, error) {
-	devices := make([]*midimuxer.Device, 0)
+func getDeviceSelection(choices []midimuxer.Device, label string, selectedGlyph string) (midimuxer.Device, error) {
+	devices := make([]midimuxer.Device, 0)
 	for _, device := range choices {
 		devices = append(devices, device)
 	}
 	sort.Slice(devices, func(i, j int) bool {
-		return devices[i].DeviceInfo.Name < devices[j].DeviceInfo.Name
+		return devices[i].Name() < devices[j].Name()
 	})
 
 	deviceTemplates := &promptui.SelectTemplates{
-		Active:   fmt.Sprintf("%s {{ .DeviceInfo.Name | cyan | bold}}", selectedGlyph),
-		Inactive: "{{ .DeviceInfo.Name | cyan }}",
-		Selected: fmt.Sprintf("%s {{ .DeviceInfo.Name }}", selectedGlyph),
+		Active:   fmt.Sprintf("%s {{ .Name | cyan | bold}}", selectedGlyph),
+		Inactive: "{{ .Name | cyan }}",
+		Selected: fmt.Sprintf("%s {{ .Name }}", selectedGlyph),
 	}
 
 	prompt := promptui.Select{
@@ -53,7 +54,7 @@ func prompt(router *midimuxer.Router) error {
 }
 
 func main() {
-	router := midimuxer.NewRouter()
+	router := midimuxer.NewRouter(&portmidi.Source{})
 	router.Start()
 	defer router.Stop()
 
