@@ -5,13 +5,12 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/rakyll/portmidi"
 )
 
 var _ = Describe("Filters", func() {
 	var (
-		event1 Event = Event{Event: portmidi.Event{Status: 0x80, Data1: 65, Data2: 127}, Device: nil}
-		event2 Event = Event{Event: portmidi.Event{Status: 0x81, Data1: 30, Data2: 50}, Device: nil}
+		event1 = Event{Status: 0x80, Data1: 65, Data2: 127}
+		event2 = Event{Status: 0x81, Data1: 30, Data2: 50}
 		filter Filter
 	)
 
