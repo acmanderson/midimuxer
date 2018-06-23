@@ -1,4 +1,5 @@
 [![GoDoc](https://godoc.org/github.com/acmanderson/midimuxer?status.svg)](https://godoc.org/github.com/acmanderson/midimuxer)
+[![Build Status](https://travis-ci.org/acmanderson/midimuxer.svg?branch=master)](https://travis-ci.org/acmanderson/midimuxer)
 
 # midimuxer
 Route MIDI events between your MIDI devices!
